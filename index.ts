@@ -1,14 +1,21 @@
 import express from "express";
+import { authSchema } from "./schema";
+import bcrypt from "bcrypt";
+import type { User } from "./types";
+import jwt from "jsonwebtoken";
 
 const app = express();
 app.use(express.json());
 
-const users = [{
+const JWT_SECRET = process.env.JWT_SECRET!;
+let USER_ID = 3;
+
+const users: User[] = [{
     userId: 1,
-    username: "harkirat",
-    password: 123123,
+    username: "lohith",
+    password: "$2b$10$Q1x8mD3k0tQ6wWw4JxJ8mOlbR4n4nQ5f8z8l6M6P5j3nGfK9YzW5S",
     collateral: {
-         availabe: 2000,
+         available: 2000,
          locked: 1000
     },
      positions: [
@@ -22,10 +29,10 @@ const users = [{
     ]
 }, {
     userId: 2,
-    username: "raman",
-    password: 123123,
+    username: "niketh",
+    password: "$2b$10$8jT7nQvB2zL9sK4xWmF6UOeX7aY3pQ1nM5dC8rH2kL0vN9tS6yP1G",
     collateral: {
-         availabe: 2000,
+         available: 2000,
          locked: 2000
     },
     positions: [
@@ -76,8 +83,66 @@ const fills = [{
     short: 1
 }];
 
-app.post("/signup", (req, res) => {})
-app.post("/signin", (req, res) => {})
+app.post("/signup", async (req, res) => {
+    const parsedBody = authSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json({ message: "Invalid inputs", errors: parsedBody.error.issues });
+    }
+
+    const { username, password } = parsedBody.data;
+
+    const existingUser = users.find((u) => u.username === username);
+
+    if (existingUser) {
+        return res.status(400).json({ message: "User already exists" });
+    }
+    
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user: User = {
+        userId: USER_ID++,
+        username,
+        password: hashedPassword,
+        collateral: {
+            available: 0,
+            locked: 0
+        },
+        positions: [],
+        orders: []
+    }
+
+    users.push(user);
+
+    return res.status(201).json({ message: "Signed up successfully" });
+})
+
+app.post("/signin", async (req, res) => {
+    const parsedBody = authSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+        return res.status(400).json({ message: "Invalid inputs", errors: parsedBody.error.issues });
+    }
+
+    const { username, password } = parsedBody.data;
+
+    const user = users.find((u) => u.username === username);
+
+    if (!user) {
+        return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    const isCorrectPassword = await bcrypt.compare(password, user.password);
+
+    if (!isCorrectPassword) {
+        return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const token = jwt.sign({ userId: user.userId }, JWT_SECRET, { expiresIn: "7d" });
+
+    return res.json({ message: "Signed in successfully", token });
+
+})
 app.post("/onramp", (req, res) => {})
 app.post("/order", (req, res) => {})
 app.delete("/order", (req, res) => {})
@@ -88,11 +153,11 @@ app.get("/orders/open/:marketId", (req, res) => {})
 app.get("/orders/:marketId", (req, res) => {})
 app.get("/fills", (req, res) => {});
 
-async function liqudationChecks(asset: string, price: number) {
+async function liquidationChecks(asset: string, price: number) {
 
 }
 
 
 async function onPriceUpdateFromBinance(asset: string, price: number) {
-    liqudationChecks(asset, price);   
+    liquidationChecks(asset, price);   
 }
